@@ -98,6 +98,9 @@ function App() {
   const [isTransferring, setIsTransferring] = useState(false)
   const [baseUsdcBalance, setBaseUsdcBalance] = useState<string>('0')
   const [sepoliaUsdcBalance, setSepoliaUsdcBalance] = useState<string>('0')
+  const [walletEthBalance, setWalletEthBalance] = useState<string>('0')
+  const [walletBaseUsdcBalance, setWalletBaseUsdcBalance] = useState<string>('0')
+  const [walletSepoliaUsdcBalance, setWalletSepoliaUsdcBalance] = useState<string>('0')
   
   const fetchBalances = async (baseAddr: string, sepoliaAddr: string) => {
     setIsBalanceLoading(true)
@@ -140,6 +143,34 @@ function App() {
     }
   }
 
+  const fetchWalletBalances = async (address: string) => {
+    if (!address) return
+
+    try {
+      const ethBalance = await baseClient.getBalance({ address: address as `0x${string}` })
+      setWalletEthBalance(formatEther(ethBalance))
+
+      const baseUsdcBalance = await baseClient.readContract({
+        address: mcUSDC.on(baseSepolia.id),
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [address]
+      })
+
+      const sepoliaUsdcBalance = await sepoliaClient.readContract({
+        address: mcUSDC.on(sepolia.id),
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [address]
+      })
+
+      setWalletBaseUsdcBalance(formatUnits(baseUsdcBalance, 6))
+      setWalletSepoliaUsdcBalance(formatUnits(sepoliaUsdcBalance, 6))
+    } catch (err) {
+      console.error('Error fetching wallet balances:', err)
+    }
+  }
+
   useEffect(() => {
     const initializeAddresses = async () => {
       try {
@@ -169,6 +200,12 @@ function App() {
 
     initializeAddresses();
   }, []);
+
+  useEffect(() => {
+    if (account.address) {
+      fetchWalletBalances(account.address)
+    }
+  }, [account.address, account.chainId])
 
   const handleRefreshAddresses = async () => {
     setIsLoading(true);
@@ -281,9 +318,22 @@ function App() {
       <div>
         <h2>Account</h2>
         <div>
-          status: {account.status}
+          <h3>Wallet Info</h3>
+          Address: {account.address || 'Not connected'}
           <br />
+          ETH Balance: {walletEthBalance} ETH
           <br />
+          Base USDC Balance: {walletBaseUsdcBalance} USDC
+          <br />
+          Sepolia USDC Balance: {walletSepoliaUsdcBalance} USDC
+          <br />
+          Status: {account.status}
+          <br />
+          Current Network: {getChainName(account.chainId)}
+        </div>
+
+        <h3>Smart Contract Account Info</h3>
+        <div>
           Base Address: {baseAddress}
           <br />
           Base Balance: {isBalanceLoading ? 'Loading...' : `${baseBalance} ETH`}
@@ -299,8 +349,6 @@ function App() {
           <br />
           <br />
           Unified USDC Balance: {isLoading ? 'Loading...' : `${usdcBalance} USDC`}
-          <br />
-          Current Network: {getChainName(account.chainId)}
         </div>
 
         <button 
