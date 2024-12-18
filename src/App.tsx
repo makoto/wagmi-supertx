@@ -12,7 +12,7 @@ import {
 import { 
   privateKeyToAccount, generatePrivateKey
 } from "viem/accounts";
-import { baseSepolia, arbitrumSepolia,  } from "viem/chains"; 
+import { baseSepolia, sepolia } from "viem/chains"; 
 import { createPublicClient, formatEther, formatUnits, http, parseUnits, encodeFunctionData } from 'viem'
 
 const eoa = privateKeyToAccount(import.meta.env.VITE_PRIV_KEY);
@@ -54,7 +54,7 @@ const mcUSDC = buildMultichainAddressMapping([
   mapAddressToChain(
     "0x036CbD53842c5426634e7929541eC2318f3dCF7e", baseSepolia.id),
   mapAddressToChain(
-    "0xf3c3351d6bd0098eeb33ca8f830faf2a141ea2e1", arbitrumSepolia.id),
+    "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238", sepolia.id),
 ]);
 
 const baseClient = createPublicClient({
@@ -62,8 +62,8 @@ const baseClient = createPublicClient({
   transport: http()
 })
 
-const arbitrumClient = createPublicClient({
-  chain: arbitrumSepolia,
+const sepoliaClient = createPublicClient({
+  chain: sepolia,
   transport: http()
 })
 
@@ -72,7 +72,7 @@ const getChainName = (chainId: number | undefined) => {
   
   const chains: Record<number, string> = {
     [baseSepolia.id]: 'Base Sepolia',
-    [arbitrumSepolia.id]: 'Arbitrum Sepolia',
+    [sepolia.id]: 'Sepolia',
     // Add more chains as needed
   }
   
@@ -86,27 +86,29 @@ function App() {
   const { connectors, connect, status, error } = useConnect()
   const { disconnect } = useDisconnect()
   const [baseAddress, setBaseAddress] = useState<string>('')
-  const [arbitrumAddress, setArbitrumAddress] = useState<string>('')
+  const [sepoliaAddress, setSepoliaAddress] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false);
   const [addressError, setAddressError] = useState<string | null>(null);
   const [baseBalance, setBaseBalance] = useState<string>('0')
-  const [arbitrumBalance, setArbitrumBalance] = useState<string>('0')
+  const [sepoliaBalance, setSepoliaBalance] = useState<string>('0')
   const [isBalanceLoading, setIsBalanceLoading] = useState(false)
   const [usdcBalance, setUsdcBalance] = useState<string>('0')
   const [recipient, setRecipient] = useState<string>('')
   const [amount, setAmount] = useState<string>('')
   const [isTransferring, setIsTransferring] = useState(false)
+  const [baseUsdcBalance, setBaseUsdcBalance] = useState<string>('0')
+  const [sepoliaUsdcBalance, setSepoliaUsdcBalance] = useState<string>('0')
   
-  const fetchBalances = async (baseAddr: string, arbitrumAddr: string) => {
+  const fetchBalances = async (baseAddr: string, sepoliaAddr: string) => {
     setIsBalanceLoading(true)
     try {
-      const [baseBalanceWei, arbitrumBalanceWei] = await Promise.all([
+      const [baseBalanceWei, sepoliaBalanceWei] = await Promise.all([
         baseClient.getBalance({ address: baseAddr as `0x${string}` }),
-        arbitrumClient.getBalance({ address: arbitrumAddr as `0x${string}` })
+        sepoliaClient.getBalance({ address: sepoliaAddr as `0x${string}` })
       ])
 
       setBaseBalance(formatEther(baseBalanceWei))
-      setArbitrumBalance(formatEther(arbitrumBalanceWei))
+      setSepoliaBalance(formatEther(sepoliaBalanceWei))
     } catch (err) {
       console.error('Error fetching balances:', err)
       setAddressError('Failed to fetch balances')
@@ -115,27 +117,51 @@ function App() {
     }
   }
 
+  const fetchUsdcBalances = async (baseAddr: string, sepoliaAddr: string) => {
+    try {
+      const baseBalance = await baseClient.readContract({
+        address: mcUSDC.on(baseSepolia.id),
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [baseAddr]
+      })
+
+      const sepoliaBalance = await sepoliaClient.readContract({
+        address: mcUSDC.on(sepolia.id),
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [sepoliaAddr]
+      })
+
+      setBaseUsdcBalance(formatUnits(baseBalance, 6))
+      setSepoliaUsdcBalance(formatUnits(sepoliaBalance, 6))
+    } catch (err) {
+      console.error('Error fetching USDC balances:', err)
+    }
+  }
+
   useEffect(() => {
     const initializeAddresses = async () => {
       try {
         const mcNexus = await toMultichainNexusAccount({
-          chains: [baseSepolia, arbitrumSepolia],
+          chains: [baseSepolia, sepolia],
           signer: eoa,
         });
         
         const baseAddr = mcNexus.deploymentOn(baseSepolia.id).address;
-        const arbitrumAddr = mcNexus.deploymentOn(arbitrumSepolia.id).address;
+        const sepoliaAddr = mcNexus.deploymentOn(sepolia.id).address;
         const _usdcBalance = await getUnifiedERC20Balance({
             multichainAccount: mcNexus,
             tokenMapping: mcUSDC,
         });
-        console.log({baseAddr, arbitrumAddr, usdcBalance})
+        console.log({baseAddr, sepoliaAddr, usdcBalance})
         setUsdcBalance(formatUnits(_usdcBalance.balance, 6))
 
         setBaseAddress(baseAddr);
-        setArbitrumAddress(arbitrumAddr);
+        setSepoliaAddress(sepoliaAddr);
 
-        await fetchBalances(baseAddr, arbitrumAddr);
+        await fetchBalances(baseAddr, sepoliaAddr);
+        await fetchUsdcBalances(baseAddr, sepoliaAddr);
       } catch (error) {
         console.error('Error initializing addresses:', error);
       }
@@ -149,12 +175,12 @@ function App() {
     setAddressError(null);
     try {
       const mcNexus = await toMultichainNexusAccount({
-        chains: [baseSepolia, arbitrumSepolia],
+        chains: [baseSepolia, sepolia],
         signer: eoa,
       });
       
       const newBaseAddr = mcNexus.deploymentOn(baseSepolia.id).address;
-      const newArbitrumAddr = mcNexus.deploymentOn(arbitrumSepolia.id).address;
+      const newSepoliaAddr = mcNexus.deploymentOn(sepolia.id).address;
       
       const _usdcBalance = await getUnifiedERC20Balance({
           multichainAccount: mcNexus,
@@ -163,9 +189,9 @@ function App() {
       setUsdcBalance(formatUnits(_usdcBalance.balance, 6))
       
       setBaseAddress(newBaseAddr);
-      setArbitrumAddress(newArbitrumAddr);
+      setSepoliaAddress(newSepoliaAddr);
 
-      await fetchBalances(newBaseAddr, newArbitrumAddr);
+      await fetchBalances(newBaseAddr, newSepoliaAddr);
     } catch (err) {
       setAddressError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -184,27 +210,26 @@ function App() {
 
     try {
       const mcNexus = await toMultichainNexusAccount({
-        chains: [baseSepolia, arbitrumSepolia],
+        chains: [baseSepolia, sepolia],
         signer: eoa,
       });
 
-      const userOpArb = buildAbstractUserOp({
+      const userOpSepolia = buildAbstractUserOp({
           calls: [{
-              to: mcUSDC.on(arbitrumSepolia.id),
+              to: mcUSDC.on(sepolia.id),
               gasLimit: 100000n,
               data: encodeFunctionData({
                   abi: erc20Abi,
                   functionName: 'transfer',
                   args: [
-                      mcNexus.deploymentOn(arbitrumSepolia.id).address,  // your SCA address
-                      parseUnits('0.3', 6)  // 0.3 USDC (6 decimals)
+                      mcNexus.deploymentOn(sepolia.id).address,
+                      parseUnits('0.1', 6)
                   ]
               })
           }],
-          chainId: arbitrumSepolia.id
+          chainId: sepolia.id
       });
       
-      // User Operation for Base Sepolia
       const userOpBase = buildAbstractUserOp({
           calls: [{
               to: mcUSDC.on(baseSepolia.id),
@@ -213,8 +238,8 @@ function App() {
                   abi: erc20Abi,
                   functionName: 'transfer',
                   args: [
-                      mcNexus.deploymentOn(baseSepolia.id).address,  // your SCA address
-                      parseUnits('0.3', 6)  // 0.3 USDC (6 decimals)
+                      mcNexus.deploymentOn(baseSepolia.id).address,
+                      parseUnits('0.1', 6)
                   ]
               })
           }],
@@ -224,57 +249,25 @@ function App() {
       const quote = await meeService.getQuote({
         account: mcNexus,
         supertransaction: {
-            instructions: [userOpArb, userOpBase],
+            instructions: [userOpSepolia, userOpBase],
             feeToken: {
                 chainId: baseSepolia.id,
                 address: mcUSDC.on(baseSepolia.id)
-                // chainId: arbitrumSepolia.id,
-                // address: mcUSDC.on(arbitrumSepolia.id)
             }
         }
       });
       console.log({quote})
-      // const hash = await meeService.execute({
-      //   quote: quote,
-      //   signature: formatMeeSignature({
-      //       signedHash: await eoa.signMessage({
-      //           message: { raw: quote.hash }
-      //       }),
-      //       executionMode: 'direct-to-mee'
-      //   })
-      // });
-      // console.log({hash})
-
-      // // Build the transfer operation
-      // const transferOp = buildERC20TransferOp({
-      //   tokenMapping: mcUSDC,
-      //   to: recipient as `0x${string}`,
-      //   amount: parseUnits(amount, 6), // USDC has 6 decimals
-      // });
-
-      // // Build the multichain operation
-      // const multichainOp = buildMultichainOp({
-      //   operations: [transferOp],
-      // });
-
-      // // Build the user operation
-      // const userOp = await buildAbstractUserOp({
-      //   multichainAccount: mcNexus,
-      //   operation: multichainOp,
-      // });
-
-      // // Send the operation to MEE node
-      // const response = await meeService.sendUserOp(userOp);
-      // console.log('Transfer response:', response);
-
-      // Refresh balances after transfer
-      // const _usdcBalance = await getUnifiedERC20Balance({
-      //   multichainAccount: mcNexus,
-      //   tokenMapping: mcUSDC,
-      // });
-      // setUsdcBalance(formatUnits(_usdcBalance.balance, 6))
-
-      // await fetchBalances(baseAddress, arbitrumAddress);
+      const hash = await meeService.execute({
+        quote: quote,
+        signature: formatMeeSignature({
+            signedHash: await eoa.signMessage({
+                message: { raw: quote.hash }
+            }),
+            executionMode: 'direct-to-mee'
+        })
+      });
+     
+      console.log('Supertransaction hash:', hash.hash);
     } catch (err) {
       console.error('Transfer error:', err)
       setAddressError(err instanceof Error ? err.message : 'Transfer failed')
@@ -290,13 +283,20 @@ function App() {
         <div>
           status: {account.status}
           <br />
+          <br />
           Base Address: {baseAddress}
           <br />
           Base Balance: {isBalanceLoading ? 'Loading...' : `${baseBalance} ETH`}
           <br />
-          Arbitrum Address: {arbitrumAddress}
+          Base USDC Balance: {`${baseUsdcBalance} USDC`}
           <br />
-          Arbitrum Balance: {isBalanceLoading ? 'Loading...' : `${arbitrumBalance} ETH`}
+          <br />
+          Sepolia Address: {sepoliaAddress}
+          <br />
+          Sepolia Balance: {isBalanceLoading ? 'Loading...' : `${sepoliaBalance} ETH`}
+          <br />
+          Sepolia USDC Balance: {`${sepoliaUsdcBalance} USDC`}
+          <br />
           <br />
           Unified USDC Balance: {isLoading ? 'Loading...' : `${usdcBalance} USDC`}
           <br />
@@ -310,8 +310,8 @@ function App() {
           {isLoading || isBalanceLoading ? 'Refreshing...' : 'Refresh Addresses & Balances'}
         </button>
         <button 
-          onClick={() => fetchBalances(baseAddress, arbitrumAddress)}
-          disabled={isBalanceLoading || !baseAddress || !arbitrumAddress}
+          onClick={() => fetchBalances(baseAddress, sepoliaAddress)}
+          disabled={isBalanceLoading || !baseAddress || !sepoliaAddress}
         >
           {isBalanceLoading ? 'Refreshing Balances...' : 'Refresh Balances Only'}
         </button>
